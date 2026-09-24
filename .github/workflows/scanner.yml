@@ -18,10 +18,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Bagimliliklari Yukle
+      - name: Bagimliliklari Yukle (Requirements)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt
 
       - name: Tarayici Kodunu Calistir
         env:
