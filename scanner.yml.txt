@@ -1,0 +1,30 @@
+name: Kripto Sinyal Tarayici
+
+on:
+  schedule:
+    - cron: '11,40 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodlari Indir (Checkout)
+        uses: actions/checkout@v4
+
+      - name: Python Ortamini Kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Kutuphaneleri Dogrudan Yukle
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests tqdm openpyxl
+
+      - name: Tarayici Kodunu Calistir
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python main.py
