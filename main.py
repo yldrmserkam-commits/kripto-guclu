@@ -15,12 +15,13 @@ TARAMA_YAPILACAK_PERIYOTLAR = {
 }
 
 CCI_PERIYOT = 20  
-EMA_TREND = 20    
+EMA_TREND = 20     
+RSI_PERIYOT = 14   # RSI periyodu
 
 # --- FİLTRE AKTİFLİK AYARLARI ---
-HACIM_FILTRESI_AKTIF = True      
+HACIM_FILTRESI_AKTIF = True       
 HACIM_ORT_PERIYOT = 10
-TREND_FILTRESI_AKTIF = True      
+TREND_FILTRESI_AKTIF = True       
 
 # Telegram Bildirim Ayarları
 TELEGRAM_AKTIF = True
@@ -83,7 +84,7 @@ def binance_klines_cek(symbol, interval, limit=100):
             response = requests.get(url, params=params, headers=headers, timeout=4)
             if response.status_code == 200:
                 data = response.json()
-                if not data or len(data) < max(CCI_PERIYOT + 5, 25):
+                if not data or len(data) < max(CCI_PERIYOT, RSI_PERIYOT) + 5:
                     return None
                 df = pd.DataFrame(data, columns=[
                     'Open_time', 'Open', 'High', 'Low', 'Close', 'Volume',
@@ -129,18 +130,28 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             close_curr = float(df['Close'].iloc[-1])
             ema20_curr = float(ema20.iloc[-1])
 
+            # CCI Hesaplama
             tp = (df['High'] + df['Low'] + df['Close']) / 3
             sma_tp = tp.rolling(window=CCI_PERIYOT).mean()
             mad = tp.rolling(window=CCI_PERIYOT).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
-            
             mad_safe = np.where(mad == 0, 0.0001, mad)
             cci = (tp - sma_tp) / (0.015 * mad_safe)
 
             curr_cci = float(cci.iloc[-1])
             prev_cci = float(cci.iloc[-2])
 
+            # RSI Hesaplama
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=RSI_PERIYOT).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=RSI_PERIYOT).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+
+            curr_rsi = float(rsi.iloc[-1])
+            prev_rsi = float(rsi.iloc[-2])
+
             if debug_sayac < 3:
-                print(f"\n[DEBUG] {ticker} | Son CCI: {curr_cci:.2f} | Önceki CCI: {prev_cci:.2f}")
+                print(f"\n[DEBUG] {ticker} | CCI: {curr_cci:.2f} | RSI: {curr_rsi:.2f}")
                 debug_sayac += 1
 
             # 1. CCI Koşulu
@@ -148,11 +159,16 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not cci_kosulu:
                 continue
 
-            # 2. Trend Filtresi Koşulu
+            # 2. RSI Koşulu (70'i yakın zamanda geçmiş ve 72 civarı [70 - 75 aralığı])
+            rsi_kosulu = (70.0 <= curr_rsi <= 75.0)
+            if not rsi_kosulu:
+                continue
+
+            # 3. Trend Filtresi Koşulu
             if TREND_FILTRESI_AKTIF and close_curr < ema20_curr:
                 continue  
 
-            # 3. Hacim Filtresi Koşulu
+            # 4. Hacim Filtresi Koşulu
             if HACIM_FILTRESI_AKTIF:
                 vol_sma = df['Volume'].rolling(window=HACIM_ORT_PERIYOT).mean()
                 if curr_vol <= float(vol_sma.iloc[-1]):
@@ -164,6 +180,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 'Son Kapanis': round(close_curr, 4),
                 'EMA 20': round(ema20_curr, 4),
                 'Son CCI': round(curr_cci, 2),
+                'Son RSI': round(curr_rsi, 2),
                 'Tarih/Saat': str(df.index[-1])
             }
             results.append(bilgi)
@@ -175,7 +192,8 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*CCI:* {curr_cci:.2f}\n\n"
+                f"*CCI:* {curr_cci:.2f}\n"
+                f"*RSI:* {curr_rsi:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
             )
             telegram_mesaj_gonder(msg)
