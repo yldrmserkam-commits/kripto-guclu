@@ -40,6 +40,7 @@ def telegram_mesaj_gonder(mesaj):
             "disable_web_page_preview": True,
         }
         requests.post(url, json=payload, timeout=5)
+        time.sleep(0.3)
     except Exception as e:
         print(f"Telegram mesajı gönderilemedi: {e}")
 
@@ -89,7 +90,7 @@ def binance_klines_cek(symbol, interval, limit=150):
             response = requests.get(url, params=params, headers=headers, timeout=4)
             if response.status_code == 200:
                 data = response.json()
-                min_gerekli = 60
+                min_gerekli = 80
                 if not data or len(data) < min_gerekli:
                     return None
                 df = pd.DataFrame(data, columns=[
@@ -151,9 +152,9 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             prev_rsi = float(rsi.iloc[-2])
             prev_prev_rsi = float(rsi.iloc[-3])
 
-            # --- 3. ICHIMOKU HESAPLAMA ---
+            # --- 3. ICHIMOKU HESAPLAMA (Kijun 52) ---
             tenkan_sen = (df['High'].rolling(window=9).max() + df['Low'].rolling(window=9).min()) / 2
-            kijun_sen = (df['High'].rolling(window=26).max() + df['Low'].rolling(window=26).min()) / 2
+            kijun_sen = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()) / 2
 
             senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
             senkou_span_b = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()).shift(26) / 2
@@ -161,6 +162,22 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             curr_span_a = float(senkou_span_a.iloc[-1])
             curr_span_b = float(senkou_span_b.iloc[-1])
             bulut_ust = max(curr_span_a, curr_span_b)
+
+            # --- CHİKOU SPAN HESABI VE KESİŞİM / %5 BAND KONTROLÜ ---
+            # Chikou Span: Mevcut kapanış fiyatının 26 periyot geriye kaydırılmış halidir.
+            # Karşılaştırma yapabilmek için 26 mum önceki fiyat seviyesine bakılır.
+            if len(df) > 26:
+                chikou_curr = close_curr
+                gecmis_fiyat = float(df['Close'].iloc[-27]) # 26 periyot önceki mumun kapanışı
+                
+                # Tam kesişim veya %5 yukarı/aşağı tolerans kontrolü
+                # Chikou güncel durumda geçmiş fiyatı yukarı kesti VEYA geçmiş fiyatın %5 altı/üstü aralığında
+                tam_chikou_kesisimi = (chikou_curr > gecmis_fiyat) and (float(df['Close'].iloc[-2]) <= float(df['Close'].iloc[-28]))
+                yuzde_bes_bandi = (gecmis_fiyat * 0.95) <= chikou_curr <= (gecmis_fiyat * 1.05)
+                
+                chikou_kosulu = tam_chikou_kesisimi or yuzde_bes_bandi
+            else:
+                chikou_kosulu = True
 
             # --- KOŞUL KONTROLLERİ ---
             cci_kosulu = (curr_cci > -100) and (curr_cci > prev_cci)
@@ -172,7 +189,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not (tam_kesisim or bir_mum_once_gecti):
                 continue
 
-            if ICHIMOKU_FILTRESI_AKTIF and close_curr <= bulut_ust:
+            if ICHIMOKU_FILTRESI_AKTIF and (close_curr <= bulut_ust or not chikou_kosulu):
                 continue
 
             if HACIM_FILTRESI_AKTIF:
@@ -193,11 +210,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *İCHİMOKU & RSI SİNYALİ*\n"
+                f"🚀 *İCHİMOKU & RSI & CHİKOU SİNYALİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Bulut Üstü:* Evet ☁️\n"
+                f"*Bulut Üstü & Chikou Uygun:* Evet ☁️📈\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
