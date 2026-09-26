@@ -13,6 +13,7 @@ TARAMA_YAPILACAK_PERIYOTLAR = {
     "1 Saatlik": True,
     "4 Saatlik": True,
     "Günlük": True,
+    "Haftalık": True,  # 🚀 Haftalık periyot buraya eklendi
 }
 
 CCI_PERIYOT = 20
@@ -48,7 +49,8 @@ PERIYOT_AYARLARI = {
     "30 Dakikalık": {"interval": "30m", "limit": 150},
     "1 Saatlik": {"interval": "1h", "limit": 150},
     "4 Saatlik": {"interval": "4h", "limit": 150},
-    "Günlük": {"interval": "1d", "limit": 150}
+    "Günlük": {"interval": "1d", "limit": 150},
+    "Haftalık": {"interval": "1w", "limit": 150} # Haftalık mum verisi için interval ayarı
 }
 
 def binance_aktif_usdt_listesini_getir():
@@ -155,36 +157,22 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             curr_kijun = float(kijun_sen.iloc[-1])
             prev_kijun = float(kijun_sen.iloc[-2])
-            prev2_kijun = float(kijun_sen.iloc[-3])
-
             close_prev = float(df['Close'].iloc[-2])
-            close_prev2 = float(df['Close'].iloc[-3])
 
-            # A) Fiyat Kijun-sen Kesişim Kontrolü (Şu an veya son 1-2 mum içinde yukarı kesti)
-            fiyat_kesisim_0 = (close_curr > curr_kijun) and (close_prev <= prev_kijun)
-            fiyat_kesisim_1 = (close_prev > prev_kijun) and (close_prev2 <= prev2_kijun)
-            fiyat_uzerinde = close_curr > curr_kijun
-            
-            fiyat_kijun_kosulu = fiyat_kesisim_0 or fiyat_kesisim_1 or fiyat_uzerinde
+            # A) Fiyat Kijun-sen Kesişimi (Sıkılaştırılmış: Tam kesişim veya en fazla %1.5 üstünde)
+            fiyat_kesisim = (close_curr > curr_kijun) and (close_prev <= prev_kijun)
+            fiyat_cok_yakin = (curr_kijun <= close_curr <= curr_kijun * 1.015)
+            fiyat_kijun_kosulu = fiyat_kesisim or fiyat_cok_yakin
 
-            # B) Chikou Span & 52 Periyotluk Kijun-sen İlişkisi
-            # Chikou = Bugünkü kapanışın 26 mum geriye yansımış hali. 
-            # 26 mum önceki Kijun-sen değeri ile bugünkü fiyatı kıyaslıyoruz.
+            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun İlişkisi
             if len(df) > 78:
                 gecmis_kijun = float(kijun_sen.iloc[-26])
                 gecmis_kijun_prev = float(kijun_sen.iloc[-27])
-                gecmis_kijun_prev2 = float(kijun_sen.iloc[-28])
 
-                # Chikou yeni kesişim (0, 1 veya 2 mum toleranslı)
-                chikou_kesisim_0 = (close_curr > gecmis_kijun) and (close_prev <= gecmis_kijun_prev)
-                chikou_kesisim_1 = (close_prev > gecmis_kijun_prev) and (close_prev2 <= gecmis_kijun_prev2)
+                chikou_kesisim = (close_curr > gecmis_kijun) and (close_prev <= gecmis_kijun_prev)
+                chikou_yakin = (gecmis_kijun * 0.985 <= close_curr <= gecmis_kijun * 1.015)
 
-                # %3 aşağısı / yukarısı tolerans bandı
-                alt_sinir = gecmis_kijun * 0.97
-                ust_sinir = gecmis_kijun * 1.03
-                yuzde_bandi = alt_sinir <= close_curr <= ust_sinir
-
-                chikou_kijun_kosulu = chikou_kesisim_0 or chikou_kesisim_1 or yuzde_bandi
+                chikou_kijun_kosulu = chikou_kesisim or chikou_yakin
             else:
                 chikou_kijun_kosulu = True
 
@@ -219,11 +207,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *KIJUN-SEN & RSI & CHİKOU SİNYALİ*\n"
+                f"🚀 *SIKI KESİŞİM / YAKINLIK SİNYALİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Kijun-52 Kesişimi/Bandı:* Uygun 📈\n"
+                f"*Kijun-52 Sıfır Noktası/Kesişim:* Uygun 🎯\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
@@ -238,7 +226,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 if results:
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by=['Zaman Dilimi', 'Coin']).reset_index(drop=True)
-    df_results.to_excel("Binance_Kijun_RSI_Sonuclari.xlsx", index=False)
+    df_results.to_excel("Binance_Siki_Kesişim_Sonuclari.xlsx", index=False)
     print(f"\n✅ Toplam {len(results)} coin filtrelere ulaştı ve Excel'e kaydedildi.")
 else:
     print("\n⚠️ Filtrelere uyan kripto para bulunamadı.")
