@@ -21,7 +21,7 @@ RSI_PERIYOT = 14
 # --- FİLTRE AKTİFLİK AYARLARI ---
 HACIM_FILTRESI_AKTIF = True
 HACIM_ORT_PERIYOT = 10
-ICHIMOKU_FILTRESI_AKTIF = True  # Ichimoku Bulut Filtresi
+ICHIMOKU_FILTRESI_AKTIF = True
 
 # Telegram Bildirim Ayarları
 TELEGRAM_AKTIF = True
@@ -51,7 +51,6 @@ PERIYOT_AYARLARI = {
     "Günlük": {"interval": "1d", "limit": 150}
 }
 
-# Parite Çekme Fonksiyonu
 def binance_aktif_usdt_listesini_getir():
     urls = [
         "https://api.binance.com/api/v3/exchangeInfo",
@@ -75,7 +74,6 @@ def binance_aktif_usdt_listesini_getir():
 tickers = binance_aktif_usdt_listesini_getir()
 print(f"✅ Binance'ten toplam {len(tickers)} adet aktif USDT paritesi çekildi.")
 
-# 🚀 Mum Çekme Fonksiyonu
 def binance_klines_cek(symbol, interval, limit=150):
     urls = [
         "https://api.binance.com/api/v3/klines",
@@ -90,8 +88,7 @@ def binance_klines_cek(symbol, interval, limit=150):
             response = requests.get(url, params=params, headers=headers, timeout=4)
             if response.status_code == 200:
                 data = response.json()
-                min_gerekli = 90 # 52 + 26 + pay
-                if not data or len(data) < min_gerekli:
+                if not data or len(data) < 100:
                     return None
                 df = pd.DataFrame(data, columns=[
                     'Open_time', 'Open', 'High', 'Low', 'Close', 'Volume',
@@ -152,37 +149,44 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             prev_rsi = float(rsi.iloc[-2])
             prev_prev_rsi = float(rsi.iloc[-3])
 
-            # --- 3. ICHIMOKU HESAPLAMA (Kijun 52) ---
+            # --- 3. ICHIMOKU (Kijun 52) HESAPLAMA ---
             tenkan_sen = (df['High'].rolling(window=9).max() + df['Low'].rolling(window=9).min()) / 2
             kijun_sen = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()) / 2
 
-            senkou_span_a = ((tenkan_sen + kijun_sen) / 2).shift(26)
-            senkou_span_b = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()).shift(26) / 2
+            curr_kijun = float(kijun_sen.iloc[-1])
+            prev_kijun = float(kijun_sen.iloc[-2])
+            prev2_kijun = float(kijun_sen.iloc[-3])
 
-            curr_span_a = float(senkou_span_a.iloc[-1])
-            curr_span_b = float(senkou_span_b.iloc[-1])
-            bulut_ust = max(curr_span_a, curr_span_b)
+            close_prev = float(df['Close'].iloc[-2])
+            close_prev2 = float(df['Close'].iloc[-3])
 
-            # --- CHİKOU SPAN VE 26 GÜN ÖNCEKİ BULUT KESİŞİM KONTROLÜ ---
-            # Chikou Span (Geciken Çizgi) bugünkü fiyatın 26 mum geriye kaydırılmış halidir.
-            # Dolayısıyla bugünkü Chikou seviyesi, 26 mum önceki mumun fiyatına (Close) eşittir.
-            # 26 gün önceki bulutun üst seviyesini bulmak için, 26 mum önceki Senkou Span A ve B değerlerine bakılır.
-            if len(df) > 52:
-                gecmis_span_a = float(senkou_span_a.iloc[-26])
-                gecmis_span_b = float(senkou_span_b.iloc[-26])
-                gecmis_bulut_ust = max(gecmis_span_a, gecmis_span_b)
-                gecmis_bulut_alt = min(gecmis_span_a, gecmis_span_b)
+            # A) Fiyat Kijun-sen Kesişim Kontrolü (Şu an veya son 1-2 mum içinde yukarı kesti)
+            fiyat_kesisim_0 = (close_curr > curr_kijun) and (close_prev <= prev_kijun)
+            fiyat_kesisim_1 = (close_prev > prev_kijun) and (close_prev2 <= prev2_kijun)
+            fiyat_uzerinde = close_curr > curr_kijun
+            
+            fiyat_kijun_kosulu = fiyat_kesisim_0 or fiyat_kesisim_1 or fiyat_uzerinde
 
-                chikou_degeri = close_curr # Güncel fiyat geriye yansıyan Chikou değeridir
-                
-                # Şartlar: Chikou 26 gün önceki bulutu yeni yukarı kesti VEYA bulut üst seviyesinin %5 aşağısı/yukarısı bandında
-                tam_cikis = (chikou_degeri > gecmis_bulut_ust) and (float(df['Close'].iloc[-2]) <= max(float(senkou_span_a.iloc[-27]), float(senkou_span_b.iloc[-27])))
-                band_orani = gecmis_bulut_ust * 0.05
-                yuzde_bandi = (gecmis_bulut_ust - band_orani) <= chikou_degeri <= (gecmis_bulut_ust + band_orani)
+            # B) Chikou Span & 52 Periyotluk Kijun-sen İlişkisi
+            # Chikou = Bugünkü kapanışın 26 mum geriye yansımış hali. 
+            # 26 mum önceki Kijun-sen değeri ile bugünkü fiyatı kıyaslıyoruz.
+            if len(df) > 78:
+                gecmis_kijun = float(kijun_sen.iloc[-26])
+                gecmis_kijun_prev = float(kijun_sen.iloc[-27])
+                gecmis_kijun_prev2 = float(kijun_sen.iloc[-28])
 
-                chikou_bulut_kosulu = tam_cikis or yuzde_bandi
+                # Chikou yeni kesişim (0, 1 veya 2 mum toleranslı)
+                chikou_kesisim_0 = (close_curr > gecmis_kijun) and (close_prev <= gecmis_kijun_prev)
+                chikou_kesisim_1 = (close_prev > gecmis_kijun_prev) and (close_prev2 <= gecmis_kijun_prev2)
+
+                # %3 aşağısı / yukarısı tolerans bandı
+                alt_sinir = gecmis_kijun * 0.97
+                ust_sinir = gecmis_kijun * 1.03
+                yuzde_bandi = alt_sinir <= close_curr <= ust_sinir
+
+                chikou_kijun_kosulu = chikou_kesisim_0 or chikou_kesisim_1 or yuzde_bandi
             else:
-                chikou_bulut_kosulu = True
+                chikou_kijun_kosulu = True
 
             # --- KOŞUL KONTROLLERİ ---
             cci_kosulu = (curr_cci > -100) and (curr_cci > prev_cci)
@@ -194,7 +198,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not (tam_kesisim or bir_mum_once_gecti):
                 continue
 
-            if ICHIMOKU_FILTRESI_AKTIF and (close_curr <= bulut_ust or not chikou_bulut_kosulu):
+            if ICHIMOKU_FILTRESI_AKTIF and not (fiyat_kijun_kosulu and chikou_kijun_kosulu):
                 continue
 
             if HACIM_FILTRESI_AKTIF:
@@ -206,7 +210,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 'Zaman Dilimi': periyot_adi,
                 'Coin': ticker,
                 'Son Kapanis': round(close_curr, 4),
-                'Bulut Ust Seviye': round(bulut_ust, 4),
+                'Kijun-Sen (52)': round(curr_kijun, 4),
                 'Son RSI': round(curr_rsi, 2),
                 'Son CCI': round(curr_cci, 2),
                 'Tarih/Saat': str(df.index[-1])
@@ -215,11 +219,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *İCHİMOKU & RSI & CHİKOU BULUT KESİŞİMİ*\n"
+                f"🚀 *KIJUN-SEN & RSI & CHİKOU SİNYALİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Chikou Eski Bulutu Üstü Geçti:* Evet ☁️📈\n"
+                f"*Kijun-52 Kesişimi/Bandı:* Uygun 📈\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
@@ -234,7 +238,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 if results:
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by=['Zaman Dilimi', 'Coin']).reset_index(drop=True)
-    df_results.to_excel("Binance_Ichimoku_RSI_Sonuclari.xlsx", index=False)
+    df_results.to_excel("Binance_Kijun_RSI_Sonuclari.xlsx", index=False)
     print(f"\n✅ Toplam {len(results)} coin filtrelere ulaştı ve Excel'e kaydedildi.")
 else:
     print("\n⚠️ Filtrelere uyan kripto para bulunamadı.")
