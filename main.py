@@ -13,7 +13,7 @@ TARAMA_YAPILACAK_PERIYOTLAR = {
     "1 Saatlik": True,
     "4 Saatlik": True,
     "Günlük": True,
-    "Haftalık": True,  # 🚀 Haftalık periyot buraya eklendi
+    "Haftalık": True,
 }
 
 CCI_PERIYOT = 20
@@ -50,7 +50,7 @@ PERIYOT_AYARLARI = {
     "1 Saatlik": {"interval": "1h", "limit": 150},
     "4 Saatlik": {"interval": "4h", "limit": 150},
     "Günlük": {"interval": "1d", "limit": 150},
-    "Haftalık": {"interval": "1w", "limit": 150} # Haftalık mum verisi için interval ayarı
+    "Haftalık": {"interval": "1w", "limit": 150}
 }
 
 def binance_aktif_usdt_listesini_getir():
@@ -159,20 +159,23 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             prev_kijun = float(kijun_sen.iloc[-2])
             close_prev = float(df['Close'].iloc[-2])
 
-            # A) Fiyat Kijun-sen Kesişimi (Sıkılaştırılmış: Tam kesişim veya en fazla %1.5 üstünde)
-            fiyat_kesisim = (close_curr > curr_kijun) and (close_prev <= prev_kijun)
-            fiyat_cok_yakin = (curr_kijun <= close_curr <= curr_kijun * 1.015)
-            fiyat_kijun_kosulu = fiyat_kesisim or fiyat_cok_yakin
+            # A) Fiyat Kijun-52 Kriteri: Fiyat Kijun'ün üstünde olacak ama en fazla %10 yukarısında olacak
+            fiyat_kriteri = (curr_kijun < close_curr) and (close_curr <= curr_kijun * 1.10)
 
-            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun İlişkisi
+            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun Kriteri (%1 - %4 bant aralığı veya kesişim)
             if len(df) > 78:
                 gecmis_kijun = float(kijun_sen.iloc[-26])
                 gecmis_kijun_prev = float(kijun_sen.iloc[-27])
 
+                # Kesişim anı (Bugün üstüne çıktı, dün altındaydı)
                 chikou_kesisim = (close_curr > gecmis_kijun) and (close_prev <= gecmis_kijun_prev)
-                chikou_yakin = (gecmis_kijun * 0.985 <= close_curr <= gecmis_kijun * 1.015)
+                
+                # %1 ile %4 arasında yakınlık bandı
+                alt_bant = gecmis_kijun * 1.01
+                ust_bant = gecmis_kijun * 1.04
+                chikou_yakin_band = alt_bant <= close_curr <= ust_bant
 
-                chikou_kijun_kosulu = chikou_kesisim or chikou_yakin
+                chikou_kijun_kosulu = chikou_kesisim or chikou_yakin_band
             else:
                 chikou_kijun_kosulu = True
 
@@ -186,7 +189,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not (tam_kesisim or bir_mum_once_gecti):
                 continue
 
-            if ICHIMOKU_FILTRESI_AKTIF and not (fiyat_kijun_kosulu and chikou_kijun_kosulu):
+            if ICHIMOKU_FILTRESI_AKTIF and not (fiyat_kriteri and chikou_kijun_kosulu):
                 continue
 
             if HACIM_FILTRESI_AKTIF:
@@ -207,11 +210,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *SIKI KESİŞİM / YAKINLIK SİNYALİ*\n"
+                f"🚀 *HASSAS İCHİMOKU KESİŞİM SİNYALİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Kijun-52 Sıfır Noktası/Kesişim:* Uygun 🎯\n"
+                f"*Kijun-52 (Max %10 Üstü & Bant):* Uygun 🎯\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
@@ -226,7 +229,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 if results:
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by=['Zaman Dilimi', 'Coin']).reset_index(drop=True)
-    df_results.to_excel("Binance_Siki_Kesişim_Sonuclari.xlsx", index=False)
+    df_results.to_excel("Binance_Hassas_Kesişim_Sonuclari.xlsx", index=False)
     print(f"\n✅ Toplam {len(results)} coin filtrelere ulaştı ve Excel'e kaydedildi.")
 else:
     print("\n⚠️ Filtrelere uyan kripto para bulunamadı.")
