@@ -90,7 +90,7 @@ def binance_klines_cek(symbol, interval, limit=150):
             response = requests.get(url, params=params, headers=headers, timeout=4)
             if response.status_code == 200:
                 data = response.json()
-                min_gerekli = 80
+                min_gerekli = 90 # 52 + 26 + pay
                 if not data or len(data) < min_gerekli:
                     return None
                 df = pd.DataFrame(data, columns=[
@@ -163,21 +163,26 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             curr_span_b = float(senkou_span_b.iloc[-1])
             bulut_ust = max(curr_span_a, curr_span_b)
 
-            # --- CHİKOU SPAN HESABI VE KESİŞİM / %5 BAND KONTROLÜ ---
-            # Chikou Span: Mevcut kapanış fiyatının 26 periyot geriye kaydırılmış halidir.
-            # Karşılaştırma yapabilmek için 26 mum önceki fiyat seviyesine bakılır.
-            if len(df) > 26:
-                chikou_curr = close_curr
-                gecmis_fiyat = float(df['Close'].iloc[-27]) # 26 periyot önceki mumun kapanışı
+            # --- CHİKOU SPAN VE 26 GÜN ÖNCEKİ BULUT KESİŞİM KONTROLÜ ---
+            # Chikou Span (Geciken Çizgi) bugünkü fiyatın 26 mum geriye kaydırılmış halidir.
+            # Dolayısıyla bugünkü Chikou seviyesi, 26 mum önceki mumun fiyatına (Close) eşittir.
+            # 26 gün önceki bulutun üst seviyesini bulmak için, 26 mum önceki Senkou Span A ve B değerlerine bakılır.
+            if len(df) > 52:
+                gecmis_span_a = float(senkou_span_a.iloc[-26])
+                gecmis_span_b = float(senkou_span_b.iloc[-26])
+                gecmis_bulut_ust = max(gecmis_span_a, gecmis_span_b)
+                gecmis_bulut_alt = min(gecmis_span_a, gecmis_span_b)
+
+                chikou_degeri = close_curr # Güncel fiyat geriye yansıyan Chikou değeridir
                 
-                # Tam kesişim veya %5 yukarı/aşağı tolerans kontrolü
-                # Chikou güncel durumda geçmiş fiyatı yukarı kesti VEYA geçmiş fiyatın %5 altı/üstü aralığında
-                tam_chikou_kesisimi = (chikou_curr > gecmis_fiyat) and (float(df['Close'].iloc[-2]) <= float(df['Close'].iloc[-28]))
-                yuzde_bes_bandi = (gecmis_fiyat * 0.95) <= chikou_curr <= (gecmis_fiyat * 1.05)
-                
-                chikou_kosulu = tam_chikou_kesisimi or yuzde_bes_bandi
+                # Şartlar: Chikou 26 gün önceki bulutu yeni yukarı kesti VEYA bulut üst seviyesinin %5 aşağısı/yukarısı bandında
+                tam_cikis = (chikou_degeri > gecmis_bulut_ust) and (float(df['Close'].iloc[-2]) <= max(float(senkou_span_a.iloc[-27]), float(senkou_span_b.iloc[-27])))
+                band_orani = gecmis_bulut_ust * 0.05
+                yuzde_bandi = (gecmis_bulut_ust - band_orani) <= chikou_degeri <= (gecmis_bulut_ust + band_orani)
+
+                chikou_bulut_kosulu = tam_cikis or yuzde_bandi
             else:
-                chikou_kosulu = True
+                chikou_bulut_kosulu = True
 
             # --- KOŞUL KONTROLLERİ ---
             cci_kosulu = (curr_cci > -100) and (curr_cci > prev_cci)
@@ -189,7 +194,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not (tam_kesisim or bir_mum_once_gecti):
                 continue
 
-            if ICHIMOKU_FILTRESI_AKTIF and (close_curr <= bulut_ust or not chikou_kosulu):
+            if ICHIMOKU_FILTRESI_AKTIF and (close_curr <= bulut_ust or not chikou_bulut_kosulu):
                 continue
 
             if HACIM_FILTRESI_AKTIF:
@@ -210,11 +215,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *İCHİMOKU & RSI & CHİKOU SİNYALİ*\n"
+                f"🚀 *İCHİMOKU & RSI & CHİKOU BULUT KESİŞİMİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Bulut Üstü & Chikou Uygun:* Evet ☁️📈\n"
+                f"*Chikou Eski Bulutu Üstü Geçti:* Evet ☁️📈\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
