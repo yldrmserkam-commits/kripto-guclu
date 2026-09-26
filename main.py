@@ -156,26 +156,20 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             kijun_sen = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()) / 2
 
             curr_kijun = float(kijun_sen.iloc[-1])
-            prev_kijun = float(kijun_sen.iloc[-2])
             close_prev = float(df['Close'].iloc[-2])
 
-            # A) Fiyat Kijun-52 Kriteri: Fiyat Kijun'ün üstünde olacak ama en fazla %10 yukarısında olacak
+            # A) Fiyat Kriteri: Fiyat Kijun-52'nin üstünde olacak ama en fazla %10 yukarısında olacak
             fiyat_kriteri = (curr_kijun < close_curr) and (close_curr <= curr_kijun * 1.10)
 
-            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun Kriteri (%1 - %4 bant aralığı veya kesişim)
+            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun Kriteri 
+            # (En fazla %2 aşağıda, en fazla %1.5 yukarıda olabilir)
             if len(df) > 78:
                 gecmis_kijun = float(kijun_sen.iloc[-26])
-                gecmis_kijun_prev = float(kijun_sen.iloc[-27])
-
-                # Kesişim anı (Bugün üstüne çıktı, dün altındaydı)
-                chikou_kesisim = (close_curr > gecmis_kijun) and (close_prev <= gecmis_kijun_prev)
                 
-                # %1 ile %4 arasında yakınlık bandı
-                alt_bant = gecmis_kijun * 1.01
-                ust_bant = gecmis_kijun * 1.04
-                chikou_yakin_band = alt_bant <= close_curr <= ust_bant
-
-                chikou_kijun_kosulu = chikou_kesisim or chikou_yakin_band
+                alt_limit_chikou = gecmis_kijun * 0.98   # %2 aşağısı
+                ust_limit_chikou = gecmis_kijun * 1.015  # %1.5 yukarısı
+                
+                chikou_kijun_kosulu = alt_limit_chikou <= close_curr <= ust_limit_chikou
             else:
                 chikou_kijun_kosulu = True
 
@@ -210,11 +204,11 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *HASSAS İCHİMOKU KESİŞİM SİNYALİ*\n"
+                f"🚀 *ÖZEL İCHİMOKU BAND SİNYALİ*\n"
                 f"*Coin:* `{ticker}`\n"
                 f"*Periyot:* {periyot_adi}\n"
                 f"*Fiyat:* {close_curr}\n"
-                f"*Kijun-52 (Max %10 Üstü & Bant):* Uygun 🎯\n"
+                f"*Chikou Bant (-%2 ile +%1.5):* Uygun 🎯\n"
                 f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
                 f"*CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
@@ -229,7 +223,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 if results:
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by=['Zaman Dilimi', 'Coin']).reset_index(drop=True)
-    df_results.to_excel("Binance_Hassas_Kesişim_Sonuclari.xlsx", index=False)
+    df_results.to_excel("Binance_Ozel_Bant_Sonuclari.xlsx", index=False)
     print(f"\n✅ Toplam {len(results)} coin filtrelere ulaştı ve Excel'e kaydedildi.")
 else:
     print("\n⚠️ Filtrelere uyan kripto para bulunamadı.")
