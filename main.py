@@ -195,23 +195,19 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 
             GONDERILEN_SINYALLER.add(sinyal_kimligi)
 
-            # --- 🎯 GÖRSELDEKİ TARZDA ENTRY, SL VE 3 HEDEF HESAPLAMA ---
+            # --- 🎯 ENTRY, SL VE 3 HEDEF HESAPLAMA ---
             entry_fiyat = close_curr
-            
-            # Stop-Loss (SL): Son 5 mumun en düşük seviyesinin biraz altı (Görseldeki Kırmızı Çizgi Mantığı)
             son_dusuk = float(df['Low'].iloc[-5:].min())
-            stop_loss = son_dusuk * 0.992 # Dimbun %0.8 altı güvenli stop mesafesi
+            stop_loss = son_dusuk * 0.992 
             
-            # Eğer stop mesafesi çok yakın/uzak kalırsaentry'e göre otomatik oranla dengele (%3 altı)
             risk_marji = entry_fiyat - stop_loss
             if risk_marji <= 0:
                 stop_loss = entry_fiyat * 0.97
                 risk_marji = entry_fiyat - stop_loss
 
-            # Hedefler (TP1, TP2, TP3) - Risk miktarının katları olarak profesyonel ödül oranları
-            tp1 = entry_fiyat + (risk_marji * 1.5)  # 1.5 R:R Hedefi
-            tp2 = entry_fiyat + (risk_marji * 2.5)  # 2.5 R:R Hedefi
-            tp3 = entry_fiyat + (risk_marji * 4.0)  # 4.0 R:R Hedefi
+            tp1 = entry_fiyat + (risk_marji * 1.5)  
+            tp2 = entry_fiyat + (risk_marji * 2.5)  
+            tp3 = entry_fiyat + (risk_marji * 4.0)  
 
             bilgi = {
                 'Zaman Dilimi': periyot_adi,
@@ -228,6 +224,8 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             results.append(bilgi)
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
+            binance_link = f"https://www.binance.com/tr/futures/{ticker}"
+            
             msg = (
                 f"🟢 *LONG POZİSYON SİNYALİ*[cite: 1]\n"
                 f"*Coin:* `{ticker}` | *Periyot:* {periyot_adi}\n\n"
@@ -236,8 +234,9 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 f"🎯 *TP1:* `{tp1:.4f}`[cite: 1]\n"
                 f"🎯 *TP2:* `{tp2:.4f}`[cite: 1]\n"
                 f"🎯 *TP3:* `{tp3:.4f}`[cite: 1]\n\n"
-                f"*RSI:* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n"
-                f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
+                f"*RSI:* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n\n"
+                f"📈 [TradingView Grafik]({tv_link})\n"
+                f"🟡 [Binance Futures İşlem Aç]({binance_link})"
             )
             telegram_mesaj_gonder(msg)
 
