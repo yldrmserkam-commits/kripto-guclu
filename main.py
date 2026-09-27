@@ -24,6 +24,9 @@ HACIM_FILTRESI_AKTIF = True
 HACIM_ORT_PERIYOT = 10
 ICHIMOKU_FILTRESI_AKTIF = True
 
+# 🚀 ZIIRT PIRTI ÖNLEYEN HAFIZA
+GONDERILEN_SINYALLER = set()
+
 # Telegram Bildirim Ayarları
 TELEGRAM_AKTIF = True
 TELEGRAM_BOT_TOKEN = "8759153930:AAFcMm17a12TSWhIoMOtGq2s_K3IZKKsuS8"
@@ -152,23 +155,15 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             prev_prev_rsi = float(rsi.iloc[-3])
 
             # --- 3. ICHIMOKU (Kijun 52) HESAPLAMA ---
-            tenkan_sen = (df['High'].rolling(window=9).max() + df['Low'].rolling(window=9).min()) / 2
             kijun_sen = (df['High'].rolling(window=52).max() + df['Low'].rolling(window=52).min()) / 2
-
             curr_kijun = float(kijun_sen.iloc[-1])
-            close_prev = float(df['Close'].iloc[-2])
 
-            # A) Fiyat Kriteri: Fiyat Kijun-52'nin üstünde olacak ama en fazla %10 yukarısında olacak
             fiyat_kriteri = (curr_kijun < close_curr) and (close_curr <= curr_kijun * 1.10)
 
-            # B) Chikou Span & 52 Periyotluk Geçmiş Kijun Kriteri 
-            # (En fazla %2 aşağıda, en fazla %1.5 yukarıda olabilir)
             if len(df) > 78:
                 gecmis_kijun = float(kijun_sen.iloc[-26])
-                
-                alt_limit_chikou = gecmis_kijun * 0.98   # %2 aşağısı
-                ust_limit_chikou = gecmis_kijun * 1.015  # %1.5 yukarısı
-                
+                alt_limit_chikou = gecmis_kijun * 0.98  
+                ust_limit_chikou = gecmis_kijun * 1.015 
                 chikou_kijun_kosulu = alt_limit_chikou <= close_curr <= ust_limit_chikou
             else:
                 chikou_kijun_kosulu = True
@@ -191,26 +186,57 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 if curr_vol <= float(vol_sma.iloc[-1]):
                     continue
 
+            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ
+            son_mum_zamani = str(df.index[-1])
+            sinyal_kimligi = f"{ticker}_{periyot_adi}_{son_mum_zamani}"
+
+            if sinyal_kimligi in GONDERILEN_SINYALLER:
+                continue
+
+            GONDERILEN_SINYALLER.add(sinyal_kimligi)
+
+            # --- 🎯 GÖRSELDEKİ TARZDA ENTRY, SL VE 3 HEDEF HESAPLAMA ---
+            entry_fiyat = close_curr
+            
+            # Stop-Loss (SL): Son 5 mumun en düşük seviyesinin biraz altı (Görseldeki Kırmızı Çizgi Mantığı)
+            son_dusuk = float(df['Low'].iloc[-5:].min())
+            stop_loss = son_dusuk * 0.992 # Dimbun %0.8 altı güvenli stop mesafesi
+            
+            # Eğer stop mesafesi çok yakın/uzak kalırsaentry'e göre otomatik oranla dengele (%3 altı)
+            risk_marji = entry_fiyat - stop_loss
+            if risk_marji <= 0:
+                stop_loss = entry_fiyat * 0.97
+                risk_marji = entry_fiyat - stop_loss
+
+            # Hedefler (TP1, TP2, TP3) - Risk miktarının katları olarak profesyonel ödül oranları
+            tp1 = entry_fiyat + (risk_marji * 1.5)  # 1.5 R:R Hedefi
+            tp2 = entry_fiyat + (risk_marji * 2.5)  # 2.5 R:R Hedefi
+            tp3 = entry_fiyat + (risk_marji * 4.0)  # 4.0 R:R Hedefi
+
             bilgi = {
                 'Zaman Dilimi': periyot_adi,
                 'Coin': ticker,
-                'Son Kapanis': round(close_curr, 4),
-                'Kijun-Sen (52)': round(curr_kijun, 4),
+                'Giriş (Entry)': round(entry_fiyat, 4),
+                'Stop-Loss (SL)': round(stop_loss, 4),
+                'Hedef 1 (TP1)': round(tp1, 4),
+                'Hedef 2 (TP2)': round(tp2, 4),
+                'Hedef 3 (TP3)': round(tp3, 4),
                 'Son RSI': round(curr_rsi, 2),
                 'Son CCI': round(curr_cci, 2),
-                'Tarih/Saat': str(df.index[-1])
+                'Tarih/Saat': son_mum_zamani
             }
             results.append(bilgi)
 
             tv_link = f"https://www.tradingview.com/chart/?symbol=BINANCE:{ticker}.P"
             msg = (
-                f"🚀 *ÖZEL İCHİMOKU BAND SİNYALİ*\n"
-                f"*Coin:* `{ticker}`\n"
-                f"*Periyot:* {periyot_adi}\n"
-                f"*Fiyat:* {close_curr}\n"
-                f"*Chikou Bant (-%2 ile +%1.5):* Uygun 🎯\n"
-                f"*RSI:* {curr_rsi:.2f} (Önceki: {prev_rsi:.2f})\n"
-                f"*CCI:* {curr_cci:.2f}\n\n"
+                f"🟢 *LONG POZİSYON SİNYALİ*[cite: 1]\n"
+                f"*Coin:* `{ticker}` | *Periyot:* {periyot_adi}\n\n"
+                f"🔵 *ENTRY:* `{entry_fiyat:.4f}`[cite: 1]\n"
+                f"🔴 *SL (Stop):* `{stop_loss:.4f}`[cite: 1]\n\n"
+                f"🎯 *TP1:* `{tp1:.4f}`[cite: 1]\n"
+                f"🎯 *TP2:* `{tp2:.4f}`[cite: 1]\n"
+                f"🎯 *TP3:* `{tp3:.4f}`[cite: 1]\n\n"
+                f"*RSI:* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n"
                 f"📈 [{ticker} Vadeli Grafiğini Aç]({tv_link})"
             )
             telegram_mesaj_gonder(msg)
@@ -223,7 +249,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
 if results:
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by=['Zaman Dilimi', 'Coin']).reset_index(drop=True)
-    df_results.to_excel("Binance_Ozel_Bant_Sonuclari.xlsx", index=False)
-    print(f"\n✅ Toplam {len(results)} coin filtrelere ulaştı ve Excel'e kaydedildi.")
+    df_results.to_excel("Binance_Long_Hedefli_Sonuclar.xlsx", index=False)
+    print(f"\n✅ Toplam {len(results)} yeni sinyal hedefleriyle birlikte Excel'e kaydedildi.")
 else:
-    print("\n⚠️ Filtrelere uyan kripto para bulunamadı.")
+    print("\n⚠️ Bu taramada yeni sinyal bulunamadı.")
