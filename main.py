@@ -37,9 +37,9 @@ TARAMA_YAPILACAK_PERIYOTLAR = {
     "15 Dakikalık": True,
     "30 Dakikalık": True,
     "1 Saatlik": True,
-    "4 Saatlik": True,
-    "Günlük": True,
-    "Haftalık": True,
+    "4 Saatlik": False,
+    "Günlük": False,
+    "Haftalık": False,
 }
 
 CCI_PERIYOT = 20
