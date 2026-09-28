@@ -9,6 +9,7 @@ warnings.filterwarnings('ignore')
 
 # --- KRİPTO AYARLARI ---
 TARAMA_YAPILACAK_PERIYOTLAR = {
+    "15 Dakikalık": True,
     "30 Dakikalık": True,
     "1 Saatlik": True,
     "4 Saatlik": True,
@@ -49,6 +50,7 @@ def telegram_mesaj_gonder(mesaj):
         print(f"Telegram mesajı gönderilemedi: {e}")
 
 PERIYOT_AYARLARI = {
+    "15 Dakikalık": {"interval": "15m", "limit": 150},
     "30 Dakikalık": {"interval": "30m", "limit": 150},
     "1 Saatlik": {"interval": "1h", "limit": 150},
     "4 Saatlik": {"interval": "4h", "limit": 150},
@@ -227,13 +229,13 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             binance_link = f"https://www.binance.com/tr/futures/{ticker}"
             
             msg = (
-                f"🟢 *LONG POZİSYON SİNYALİ*[cite: 1]\n"
+                f"🟢 *LONG POZİSYON SİNYALİ*\n"
                 f"*Coin:* `{ticker}` | *Periyot:* {periyot_adi}\n\n"
-                f"🔵 *ENTRY:* `{entry_fiyat:.4f}`[cite: 1]\n"
-                f"🔴 *SL (Stop):* `{stop_loss:.4f}`[cite: 1]\n\n"
-                f"🎯 *TP1:* `{tp1:.4f}`[cite: 1]\n"
-                f"🎯 *TP2:* `{tp2:.4f}`[cite: 1]\n"
-                f"🎯 *TP3:* `{tp3:.4f}`[cite: 1]\n\n"
+                f"🔵 *ENTRY:* `{entry_fiyat:.4f}`\n"
+                f"🔴 *SL (Stop):* `{stop_loss:.4f}`\n\n"
+                f"🎯 *TP1:* `{tp1:.4f}`\n"
+                f"🎯 *TP2:* `{tp2:.4f}`\n"
+                f"🎯 *TP3:* `{tp3:.4f}`\n\n"
                 f"*RSI:* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [TradingView Grafik]({tv_link})\n"
                 f"🟡 [Binance Futures İşlem Aç]({binance_link})"
