@@ -1,4 +1,6 @@
 import time
+import os
+import json
 import warnings
 import numpy as np
 import pandas as pd
@@ -6,6 +8,29 @@ import requests
 from tqdm import tqdm
 
 warnings.filterwarnings('ignore')
+
+# --- SİNYAL TAKİP DOSYASI AYARI (GitHub Actions State Koruması) ---
+STATE_FILE = "kripto_gonderilen_sinyaller.json"
+
+def sinyalleri_yukle():
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                bugun = time.strftime('%Y-%m-%d')
+                if data.get("_tarih") != bugun:
+                    return {"_tarih": bugun}
+                return data
+        except Exception:
+            return {"_tarih": time.strftime('%Y-%m-%d')}
+    return {"_tarih": time.strftime('%Y-%m-%d')}
+
+def sinyalleri_kaydet(state):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Durum dosyası kaydedilemedi: {e}")
 
 # --- KRİPTO AYARLARI ---
 TARAMA_YAPILACAK_PERIYOTLAR = {
@@ -18,15 +43,15 @@ TARAMA_YAPILACAK_PERIYOTLAR = {
 }
 
 CCI_PERIYOT = 20
-RSI_PERIYOT = 14
+RSI_PERIYOT = 50  # RSI Periyodu
 
 # --- FİLTRE AKTİFLİK AYARLARI ---
 HACIM_FILTRESI_AKTIF = True
 HACIM_ORT_PERIYOT = 10
 ICHIMOKU_FILTRESI_AKTIF = True
 
-# 🚀 ZIIRT PIRTI ÖNLEYEN HAFIZA
-GONDERILEN_SINYALLER = set()
+# 🚀 HAFIZA YÜKLEMESİ
+gonderilenler = sinyalleri_yukle()
 
 # Telegram Bildirim Ayarları
 TELEGRAM_AKTIF = True
@@ -127,6 +152,13 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
         if df is None or df.empty:
             continue
         
+        # --- CANLI MUMU YOK SAYMA ---
+        if periyot_adi in ["15 Dakikalık", "30 Dakikalık", "1 Saatlik", "4 Saatlik"]:
+            df = df.iloc[:-1]
+
+        if len(df) < max(RSI_PERIYOT + 5, 78):
+            continue
+
         basarili_sayisi += 1
 
         try:
@@ -145,7 +177,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             curr_cci = float(cci.iloc[-1])
             prev_cci = float(cci.iloc[-2])
 
-            # --- 2. RSI HESAPLAMA ---
+            # --- 2. RSI HESAPLAMA (Periyot: 50) ---
             delta = df['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=RSI_PERIYOT).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=RSI_PERIYOT).mean()
@@ -175,10 +207,20 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not cci_kosulu:
                 continue
 
-            tam_kesisim = (curr_rsi > 70) and (prev_rsi <= 70)
-            bir_mum_once_gecti = (curr_rsi > 70) and (prev_rsi > 70) and (prev_prev_rsi <= 70)
-            if not (tam_kesisim or bir_mum_once_gecti):
+            # 🎯 BAĞIMSIZ RSI KESİŞİM KONTROLLERİ (50 veya 70'ten herhangi biri)
+            rsi_50_kesisimi = (curr_rsi > 50) and (prev_rsi <= 50)
+            rsi_50_bir_mum_once = (curr_rsi > 50) and (prev_rsi > 50) and (prev_prev_rsi <= 50)
+            kosul_50 = rsi_50_kesisimi or rsi_50_bir_mum_once
+
+            rsi_70_kesisimi = (curr_rsi > 70) and (prev_rsi <= 70)
+            rsi_70_bir_mum_once = (curr_rsi > 70) and (prev_rsi > 70) and (prev_prev_rsi <= 70)
+            kosul_70 = rsi_70_kesisimi or rsi_70_bir_mum_once
+
+            if not (kosul_50 or kosul_70):
                 continue
+
+            # Sinyal türünü belirle
+            sinyal_turu = "RSI 70 Kesişimi" if kosul_70 else "RSI 50 Kesişimi"
 
             if ICHIMOKU_FILTRESI_AKTIF and not (fiyat_kriteri and chikou_kijun_kosulu):
                 continue
@@ -188,14 +230,14 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 if curr_vol <= float(vol_sma.iloc[-1]):
                     continue
 
-            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ
+            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ (JSON Tabanlı - Tür bazlı ayrıştırıldı)
             son_mum_zamani = str(df.index[-1])
-            sinyal_kimligi = f"{ticker}_{periyot_adi}_{son_mum_zamani}"
+            sinyal_kimligi = f"{ticker}_{periyot_adi}_{sinyal_turu}_{son_mum_zamani}"
 
-            if sinyal_kimligi in GONDERILEN_SINYALLER:
+            if sinyal_kimligi in gonderilenler:
                 continue
 
-            GONDERILEN_SINYALLER.add(sinyal_kimligi)
+            gonderilenler[sinyal_kimligi] = True
 
             # --- 🎯 ENTRY, SL VE 3 HEDEF HESAPLAMA ---
             entry_fiyat = close_curr
@@ -214,6 +256,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             bilgi = {
                 'Zaman Dilimi': periyot_adi,
                 'Coin': ticker,
+                'Sinyal Türü': sinyal_turu,
                 'Giriş (Entry)': round(entry_fiyat, 4),
                 'Stop-Loss (SL)': round(stop_loss, 4),
                 'Hedef 1 (TP1)': round(tp1, 4),
@@ -229,23 +272,26 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             binance_link = f"https://www.binance.com/tr/futures/{ticker}"
             
             msg = (
-                f"🟢 *LONG POZİSYON SİNYALİ*\n"
+                f"🟢 *LONG POZİSYON SİNYALİ ({sinyal_turu})*\n"
                 f"*Coin:* `{ticker}` | *Periyot:* {periyot_adi}\n\n"
                 f"🔵 *ENTRY:* `{entry_fiyat:.4f}`\n"
                 f"🔴 *SL (Stop):* `{stop_loss:.4f}`\n\n"
                 f"🎯 *TP1:* `{tp1:.4f}`\n"
                 f"🎯 *TP2:* `{tp2:.4f}`\n"
                 f"🎯 *TP3:* `{tp3:.4f}`\n\n"
-                f"*RSI:* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n\n"
+                f"*RSI (50):* {curr_rsi:.2f} | *CCI:* {curr_cci:.2f}\n\n"
                 f"📈 [TradingView Grafik]({tv_link})\n"
                 f"🟡 [Binance Futures İşlem Aç]({binance_link})"
             )
             telegram_mesaj_gonder(msg)
 
-        except Exception as e:
+        except Exception:
             pass
 
     print(f"\nℹ️ Başarıyla taranan geçerli coin sayısı: {basarili_sayisi}")
+
+# Takip dosyasını GitHub repoda saklanmak üzere güncelle
+sinyalleri_kaydet(gonderilenler)
 
 if results:
     df_results = pd.DataFrame(results)
