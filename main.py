@@ -207,20 +207,17 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             if not cci_kosulu:
                 continue
 
-            # 🎯 BAĞIMSIZ RSI KESİŞİM KONTROLLERİ (50 veya 70'ten herhangi biri)
-            rsi_50_kesisimi = (curr_rsi > 50) and (prev_rsi <= 50)
-            rsi_50_bir_mum_once = (curr_rsi > 50) and (prev_rsi > 50) and (prev_prev_rsi <= 50)
-            kosul_50 = rsi_50_kesisimi or rsi_50_bir_mum_once
+            # 🎯 YENİ RSI ARALIK VE İVME KONTROLLERİ
+            rsi_ivme_yukari = (curr_rsi > prev_rsi) and (prev_rsi > prev_prev_rsi)
+            
+            kosul_40_52 = (40 <= curr_rsi <= 52) and rsi_ivme_yukari
+            kosul_65_72 = (65 <= curr_rsi <= 72) and rsi_ivme_yukari
 
-            rsi_70_kesisimi = (curr_rsi > 70) and (prev_rsi <= 70)
-            rsi_70_bir_mum_once = (curr_rsi > 70) and (prev_rsi > 70) and (prev_prev_rsi <= 70)
-            kosul_70 = rsi_70_kesisimi or rsi_70_bir_mum_once
-
-            if not (kosul_50 or kosul_70):
+            if not (kosul_40_52 or kosul_65_72):
                 continue
 
             # Sinyal türünü belirle
-            sinyal_turu = "RSI 70 Kesişimi" if kosul_70 else "RSI 50 Kesişimi"
+            sinyal_turu = "RSI (40-52) İvme Yukarı" if kosul_40_52 else "RSI (65-72) İvme Yukarı"
 
             if ICHIMOKU_FILTRESI_AKTIF and not (fiyat_kriteri and chikou_kijun_kosulu):
                 continue
@@ -230,7 +227,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 if curr_vol <= float(vol_sma.iloc[-1]):
                     continue
 
-            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ (JSON Tabanlı - Tür bazlı ayrıştırıldı)
+            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ (JSON Tabanlı)
             son_mum_zamani = str(df.index[-1])
             sinyal_kimligi = f"{ticker}_{periyot_adi}_{sinyal_turu}_{son_mum_zamani}"
 
