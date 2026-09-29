@@ -227,9 +227,9 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
                 if curr_vol <= float(vol_sma.iloc[-1]):
                     continue
 
-            # 🚀 4. TEKRARLI BİLDİRİM ENGELLEME KONTROLÜ (JSON Tabanlı)
-            son_mum_zamani = str(df.index[-1])
-            sinyal_kimligi = f"{ticker}_{periyot_adi}_{sinyal_turu}_{son_mum_zamani}"
+            # 🚀 4. TEKRARLI BİLDİRİMİ ENGELLEME (Coin + Periyot Bazlı Günlük Kısıtlama)
+            # Aynı coin aynı periyotta bugün bir kez sinyal verdiyse tekrar bildirim atmaz
+            sinyal_kimligi = f"{ticker}_{periyot_adi}_{sinyal_turu}"
 
             if sinyal_kimligi in gonderilenler:
                 continue
@@ -250,6 +250,7 @@ for periyot_adi, aktif_mi in TARAMA_YAPILACAK_PERIYOTLAR.items():
             tp2 = entry_fiyat + (risk_marji * 2.5)  
             tp3 = entry_fiyat + (risk_marji * 4.0)  
 
+            son_mum_zamani = str(df.index[-1])
             bilgi = {
                 'Zaman Dilimi': periyot_adi,
                 'Coin': ticker,
